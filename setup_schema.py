@@ -11,7 +11,7 @@ DB_CONFIG = {
     'host': 'localhost',
     'port': 5432,
     'user': 'postgres',
-    'password': 'your_password',  # Change this
+    'password': 'jameerbaba7',  # Change this
     'database': 'lawlm'
 }
 

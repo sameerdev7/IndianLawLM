@@ -1,4 +1,4 @@
-# LawLM - Python Dependencies
+# LawLM - Minimal Requirements (Fast Install)
 
 # Web Frameworks
 fastapi==0.109.0
@@ -6,15 +6,7 @@ uvicorn[standard]==0.27.0
 streamlit==1.31.0
 
 # Database
-psycopg2-binary==2.9.9
-
-# Machine Learning / NLP
-sentence-transformers==2.3.1
-torch==2.1.2
-transformers==4.37.0
-
-# Ollama (Open-Source LLM)
-ollama==0.1.6
+psycopg2-binary
 
 # Authentication & Security
 python-jose[cryptography]==3.3.0
@@ -22,22 +14,17 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 pyjwt==2.8.0
 
-# Data Processing
-pandas==2.1.4
-numpy==1.26.2
-
-# Visualization
-plotly==5.18.0
-
 # HTTP & API
 requests==2.31.0
 httpx==0.26.0
 
 # Utilities
-tqdm==4.66.1
 python-dotenv==1.0.0
+email-validator==2.1.0
 
-# Development
-pytest==7.4.4
-pytest-asyncio==0.23.3
-black==24.1.1
+# Ollama Python client
+
+# ML/NLP (Install these separately later if needed)
+sentence-transformers==2.3.1
+pandas
+plotly==5.18.0

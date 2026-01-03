@@ -10,7 +10,7 @@ import plotly.express as px
 from datetime import datetime
 
 # Configuration
-API_BASE_URL = "http://localhost:8000"
+API_URL = "http://localhost:8000"
 
 # Page config
 st.set_page_config(
@@ -51,70 +51,90 @@ def make_authenticated_request(endpoint, method="GET", data=None):
         st.error("Cannot connect to API server. Make sure FastAPI is running on port 8000.")
         return None
 
+import streamlit as st
+import requests
+import json
+from datetime import datetime
+
+# API Configuration
+API_URL = "http://localhost:8000"
+
 def login_page():
-    """Login/Register page"""
-    st.title("⚖️ LawLM - Indian Law Question Answering")
-    st.markdown("*Powered by RAG + Open-Source LLM (Llama 3.1)*")
+    st.title("🏛️ Indian Law LM - Login")
     
     tab1, tab2 = st.tabs(["Login", "Register"])
     
     with tab1:
-        st.subheader("Login to Your Account")
-        
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Password", type="password", key="login_password")
-        
-        if st.button("Login", type="primary", use_container_width=True):
-            if email and password:
-                response = requests.post(
-                    f"{API_BASE_URL}/auth/login",
-                    json={"email": email, "password": password}
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    st.session_state.token = data["access_token"]
-                    st.session_state.user_email = email
-                    st.success("Login successful!")
-                    st.rerun()
-                else:
-                    st.error(response.json().get("detail", "Login failed"))
-            else:
-                st.warning("Please enter email and password")
+        with st.form("login_form"):
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Login")
+            
+            if submit:
+                try:
+                    response = requests.post(
+                        f"{API_URL}/auth/login",
+                        json={"email": email, "password": password}
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        st.session_state.token = data["access_token"]
+                        st.session_state.email = email
+                        st.success("Login successful!")
+                        st.rerun()
+                    else:
+                        try:
+                            error_detail = response.json().get("detail", "Login failed")
+                        except:
+                            error_detail = f"Login failed: {response.text or 'Server error'}"
+                        st.error(error_detail)
+                except requests.exceptions.ConnectionError:
+                    st.error("❌ Cannot connect to the backend server. Please ensure the FastAPI server is running on http://localhost:8000")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
     
     with tab2:
-        st.subheader("Create New Account")
-        
-        full_name = st.text_input("Full Name", key="reg_name")
-        email = st.text_input("Email", key="reg_email")
-        password = st.text_input("Password", type="password", key="reg_password")
-        password2 = st.text_input("Confirm Password", type="password", key="reg_password2")
-        
-        if st.button("Register", type="primary", use_container_width=True):
-            if not all([full_name, email, password, password2]):
-                st.warning("Please fill all fields")
-            elif password != password2:
-                st.error("Passwords don't match")
-            elif len(password) < 6:
-                st.error("Password must be at least 6 characters")
-            else:
-                response = requests.post(
-                    f"{API_BASE_URL}/auth/register",
-                    json={
-                        "email": email,
-                        "password": password,
-                        "full_name": full_name
-                    }
-                )
-                
-                if response.status_code == 201:
-                    data = response.json()
-                    st.session_state.token = data["access_token"]
-                    st.session_state.user_email = email
-                    st.success("Registration successful!")
-                    st.rerun()
+        with st.form("register_form"):
+            new_email = st.text_input("Email")
+            full_name = st.text_input("Full Name")
+            new_password = st.text_input("Password", type="password")
+            confirm_password = st.text_input("Confirm Password", type="password")
+            submit_register = st.form_submit_button("Register")
+            
+            if submit_register:
+                if new_password != confirm_password:
+                    st.error("Passwords don't match!")
+                elif len(new_password) < 6:
+                    st.error("Password must be at least 6 characters long!")
                 else:
-                    st.error(response.json().get("detail", "Registration failed"))
+                    try:
+                        response = requests.post(
+                            f"{API_URL}/auth/register",
+                            json={
+                                "email": new_email,
+                                "full_name": full_name,
+                                "password": new_password
+                            }
+                        )
+                        
+                        if response.status_code == 201:
+                            data = response.json()
+                            st.session_state.token = data["access_token"]
+                            st.session_state.email = new_email
+                            st.success("Registration successful! You are now logged in.")
+                            st.rerun()
+                        else:
+                            try:
+                                error_detail = response.json().get("detail", "Registration failed")
+                            except:
+                                error_detail = f"Registration failed: {response.text or 'Server error'}"
+                            st.error(error_detail)
+                    except requests.exceptions.ConnectionError:
+                        st.error("❌ Cannot connect to the backend server. Please ensure the FastAPI server is running on http://localhost:8000")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
 
 def main_app():
     """Main application after login"""

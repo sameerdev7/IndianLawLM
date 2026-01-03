@@ -9,13 +9,29 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 from pathlib import Path
 from tqdm import tqdm
+from psycopg2.extras import execute_values
+import os 
+from dotenv import load_dotenv 
+
+load_dotenv()
+
+
+def get_db_connection():
+    """Create and return a database connection"""
+    return psycopg2.connect(
+        dbname=os.getenv("DB_NAME", "lawlm_db"),
+        user=os.getenv("DB_USER", "postgres"),
+        password=os.getenv("DB_PASSWORD", "your_password"),
+        host=os.getenv("DB_HOST", "localhost"),
+        port=os.getenv("DB_PORT", "5432")
+    )
 
 # Database configuration
 DB_CONFIG = {
     'host': 'localhost',
     'port': 5432,
     'user': 'postgres',
-    'password': 'your_password',
+    'password': 'jameerbaba7',
     'database': 'lawlm'
 }
 
@@ -96,39 +112,42 @@ def process_legal_data(json_files):
     return total_loaded
 
 def verify_data():
-    """Verify data loaded correctly"""
-    conn = psycopg2.connect(**DB_CONFIG)
+    """Verify the loaded data"""
+    conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Count laws by type
-    cursor.execute("""
-        SELECT law_type, COUNT(*) 
-        FROM laws 
-        GROUP BY law_type
-    """)
-    
-    print("\n" + "="*50)
-    print("DATA SUMMARY")
-    print("="*50)
-    
-    for law_type, count in cursor.fetchall():
-        print(f"{law_type:20s}: {count:5d} entries")
-    
-    # Count embeddings
-    cursor.execute("SELECT COUNT(*) FROM embeddings")
-    embedding_count = cursor.fetchone()[0]
-    print(f"{'Total Embeddings':20s}: {embedding_count:5d}")
-    
-    # Sample embedding dimension
-    cursor.execute("SELECT array_length(embedding, 1) FROM embeddings LIMIT 1")
-    dim = cursor.fetchone()[0]
-    print(f"{'Embedding Dimension':20s}: {dim:5d}")
-    
-    print("="*50 + "\n")
-    
-    cursor.close()
-    conn.close()
-
+    try:
+        # Check total entries
+        cursor.execute("SELECT COUNT(*) FROM embeddings")
+        total = cursor.fetchone()[0]
+        print(f"\n✓ Total entries in database: {total}")
+        
+        # Check embedding dimensions using pgvector's vector_dims function
+        cursor.execute("SELECT vector_dims(embedding) FROM embeddings LIMIT 1")
+        dims = cursor.fetchone()
+        if dims:
+            print(f"✓ Embedding dimensions: {dims[0]}")
+        
+        # Sample some entries
+        cursor.execute("""
+            SELECT source, question, answer 
+            FROM embeddings 
+            LIMIT 3
+        """)
+        
+        print("\n📋 Sample entries:")
+        print("=" * 80)
+        for source, question, answer in cursor.fetchall():
+            print(f"\nSource: {source}")
+            print(f"Q: {question[:100]}...")
+            print(f"A: {answer[:100]}...")
+            print("-" * 80)
+            
+    except Exception as e:
+        print(f"❌ Verification error: {e}")
+    finally:
+        cursor.close()
+        conn.close()
 if __name__ == "__main__":
     # Define your JSON files and their types
     json_files = [

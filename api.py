@@ -16,6 +16,10 @@ from passlib.context import CryptContext
 import ollama
 import os
 import time
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
@@ -105,6 +109,36 @@ class Stats(BaseModel):
     avg_response_time_ms: float
     model_info: dict
 
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database tables on startup"""
+    init_auth_tables()
+    
+    # Create default test user
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT id FROM users WHERE email = %s", ("test@example.com",))
+        if not cursor.fetchone():
+            hashed_pw = get_password_hash("password123")
+            cursor.execute(
+                "INSERT INTO users (email, hashed_password, full_name) VALUES (%s, %s, %s)",
+                ("test@example.com", hashed_pw, "Test User")
+            )
+            conn.commit()
+            print("✓ Default test user created (email: test@example.com, password: password123)")
+        
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error creating default user: {e}")
+    
+    print(f"✓ LawLM API started with {OLLAMA_MODEL}")
+    print("✓ Docs available at: http://localhost:8000/docs")
+
+
 # Database functions
 def get_db():
     """Get database connection"""
@@ -140,11 +174,18 @@ def init_auth_tables():
     print("✓ Auth tables initialized")
 
 # Authentication functions
+import hashlib
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    # Pre-hash with SHA256 to handle any length password
+    prehashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
+    return pwd_context.verify(prehashed, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    # Pre-hash with SHA256 to handle any length password
+    prehashed = hashlib.sha256(password.encode('utf-8')).hexdigest()
+    return pwd_context.hash(prehashed)
+
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()

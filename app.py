@@ -1,5 +1,5 @@
 """
-LawLM - Streamlit Frontend with Authentication
+LawLM - Streamlit Frontend (No Authentication - Testing)
 Connects to FastAPI backend
 """
 
@@ -20,138 +20,16 @@ st.set_page_config(
 )
 
 # Initialize session state
-if 'token' not in st.session_state:
-    st.session_state.token = None
-if 'user_email' not in st.session_state:
-    st.session_state.user_email = None
-
-# Helper functions
-def make_authenticated_request(endpoint, method="GET", data=None):
-    """Make authenticated API request"""
-    headers = {}
-    if st.session_state.token:
-        headers["Authorization"] = f"Bearer {st.session_state.token}"
-    
-    url = f"{API_BASE_URL}{endpoint}"
-    
-    try:
-        if method == "GET":
-            response = requests.get(url, headers=headers)
-        elif method == "POST":
-            response = requests.post(url, json=data, headers=headers)
-        
-        if response.status_code == 401:
-            st.session_state.token = None
-            st.session_state.user_email = None
-            st.error("Session expired. Please login again.")
-            st.rerun()
-        
-        return response
-    except requests.exceptions.ConnectionError:
-        st.error("Cannot connect to API server. Make sure FastAPI is running on port 8000.")
-        return None
-
-import streamlit as st
-import requests
-import json
-from datetime import datetime
-
-# API Configuration
-API_URL = "http://localhost:8000"
-
-def login_page():
-    st.title("🏛️ Indian Law LM - Login")
-    
-    tab1, tab2 = st.tabs(["Login", "Register"])
-    
-    with tab1:
-        with st.form("login_form"):
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Login")
-            
-            if submit:
-                try:
-                    response = requests.post(
-                        f"{API_URL}/auth/login",
-                        json={"email": email, "password": password}
-                    )
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        st.session_state.token = data["access_token"]
-                        st.session_state.email = email
-                        st.success("Login successful!")
-                        st.rerun()
-                    else:
-                        try:
-                            error_detail = response.json().get("detail", "Login failed")
-                        except:
-                            error_detail = f"Login failed: {response.text or 'Server error'}"
-                        st.error(error_detail)
-                except requests.exceptions.ConnectionError:
-                    st.error("❌ Cannot connect to the backend server. Please ensure the FastAPI server is running on http://localhost:8000")
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
-    
-    with tab2:
-        with st.form("register_form"):
-            new_email = st.text_input("Email")
-            full_name = st.text_input("Full Name")
-            new_password = st.text_input("Password", type="password")
-            confirm_password = st.text_input("Confirm Password", type="password")
-            submit_register = st.form_submit_button("Register")
-            
-            if submit_register:
-                if new_password != confirm_password:
-                    st.error("Passwords don't match!")
-                elif len(new_password) < 6:
-                    st.error("Password must be at least 6 characters long!")
-                else:
-                    try:
-                        response = requests.post(
-                            f"{API_URL}/auth/register",
-                            json={
-                                "email": new_email,
-                                "full_name": full_name,
-                                "password": new_password
-                            }
-                        )
-                        
-                        if response.status_code == 201:
-                            data = response.json()
-                            st.session_state.token = data["access_token"]
-                            st.session_state.email = new_email
-                            st.success("Registration successful! You are now logged in.")
-                            st.rerun()
-                        else:
-                            try:
-                                error_detail = response.json().get("detail", "Registration failed")
-                            except:
-                                error_detail = f"Registration failed: {response.text or 'Server error'}"
-                            st.error(error_detail)
-                    except requests.exceptions.ConnectionError:
-                        st.error("❌ Cannot connect to the backend server. Please ensure the FastAPI server is running on http://localhost:8000")
-                    except Exception as e:
-                        st.error(f"❌ Error: {str(e)}")
-
+if 'query' not in st.session_state:
+    st.session_state.query = ""
 
 def main_app():
-    """Main application after login"""
+    """Main application"""
     
-    # Header with logout
-    col1, col2, col3 = st.columns([3, 1, 1])
-    with col1:
-        st.title("⚖️ LawLM - Indian Law QA")
-    with col2:
-        st.write(f"👤 {st.session_state.user_email}")
-    with col3:
-        if st.button("Logout", use_container_width=True):
-            st.session_state.token = None
-            st.session_state.user_email = None
-            st.rerun()
-    
+    # Header
+    st.title("⚖️ LawLM - Indian Law Question Answering")
     st.markdown("*Powered by RAG + Llama 3.1 (Open-Source)*")
+    st.markdown("---")
     
     # Tabs
     tab1, tab2, tab3 = st.tabs(["🔍 Ask Question", "📊 Analytics", "ℹ️ About"])
@@ -183,12 +61,12 @@ def main_app():
             ]
             for ex in examples:
                 if st.button(ex, key=f"ex_{ex[:20]}"):
-                    st.session_state['query'] = ex
+                    st.session_state.query = ex
         
         # Query input
         query = st.text_area(
             "Enter your question:",
-            value=st.session_state.get('query', ''),
+            value=st.session_state.query,
             height=100,
             placeholder="e.g., What is the punishment for theft under IPC?"
         )
@@ -196,75 +74,81 @@ def main_app():
         if st.button("🔍 Search", type="primary", use_container_width=True):
             if query:
                 with st.spinner("Searching legal database..."):
-                    response = make_authenticated_request(
-                        "/query",
-                        method="POST",
-                        data={
-                            "query": query,
-                            "top_k": top_k,
-                            "law_type": None if law_type == "All" else law_type,
-                            "use_llm": use_llm
-                        }
-                    )
-                
-                if response and response.status_code == 200:
-                    result = response.json()
+                    try:
+                        response = requests.post(
+                            f"{API_URL}/query",
+                            json={
+                                "query": query,
+                                "top_k": top_k,
+                                "law_type": None if law_type == "All" else law_type,
+                                "use_llm": use_llm
+                            }
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            
+                            # Display answer
+                            st.success(f"✓ Answer generated in {result['response_time_ms']}ms")
+                            
+                            st.subheader("📋 Answer")
+                            st.info(result['answer'])
+                            
+                            st.caption(f"Model used: {result['model_used']}")
+                            
+                            # Display sources
+                            st.subheader("📚 Sources")
+                            for i, source in enumerate(result['sources'], 1):
+                                with st.expander(
+                                    f"Source {i}: {source['law_type']}" + 
+                                    (f" - Section {source['section_number']}" if source['section_number'] else "") +
+                                    f" (Relevance: {source['similarity']:.1%})"
+                                ):
+                                    st.markdown(f"**Q:** {source['question']}")
+                                    st.markdown(f"**A:** {source['answer']}")
+                        
+                        else:
+                            st.error(f"Error: {response.json().get('detail', 'Unknown error')}")
                     
-                    # Display answer
-                    st.success(f"✓ Answer generated in {result['response_time_ms']}ms")
-                    
-                    st.subheader("📋 Answer")
-                    st.info(result['answer'])
-                    
-                    st.caption(f"Model used: {result['model_used']}")
-                    
-                    # Display sources
-                    st.subheader("📚 Sources")
-                    for i, source in enumerate(result['sources'], 1):
-                        with st.expander(
-                            f"Source {i}: {source['law_type']}" + 
-                            (f" - Section {source['section_number']}" if source['section_number'] else "") +
-                            f" (Relevance: {source['similarity']:.1%})"
-                        ):
-                            st.markdown(f"**Q:** {source['question']}")
-                            st.markdown(f"**A:** {source['answer']}")
-                    
-                elif response:
-                    st.error(response.json().get("detail", "Error processing query"))
+                    except requests.exceptions.ConnectionError:
+                        st.error("❌ Cannot connect to the backend server. Please ensure the FastAPI server is running on http://localhost:8000")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
             else:
                 st.warning("Please enter a question")
     
     with tab2:
         st.header("📊 System Analytics")
         
-        # Get stats
-        response = make_authenticated_request("/stats")
+        try:
+            response = requests.get(f"{API_URL}/stats")
+            
+            if response.status_code == 200:
+                stats = response.json()
+                
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Queries", stats['total_queries'])
+                with col2:
+                    st.metric("Avg Response Time", f"{stats['avg_response_time_ms']:.0f}ms")
+                with col3:
+                    st.metric("Model", stats['model_info']['generation_model'].split(':')[0])
+                
+                # Model info
+                st.subheader("🤖 Model Information")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.info(f"**Embedding Model**\n{stats['model_info']['embedding_model']}")
+                with col2:
+                    st.info(f"**Generation Model**\n{stats['model_info']['generation_model']}")
+                with col3:
+                    st.info(f"**Embedding Dimension**\n{stats['model_info']['embedding_dimension']}")
+            else:
+                st.error("Unable to load statistics")
         
-        if response and response.status_code == 200:
-            stats = response.json()
-            
-            # Metrics
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total Queries", stats['total_queries'])
-            with col2:
-                st.metric("Active Users", stats['total_users'])
-            with col3:
-                st.metric("Avg Response Time", f"{stats['avg_response_time_ms']:.0f}ms")
-            with col4:
-                st.metric("Model", stats['model_info']['generation_model'].split(':')[0])
-            
-            # Model info
-            st.subheader("🤖 Model Information")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.info(f"**Embedding Model**\n{stats['model_info']['embedding_model']}")
-            with col2:
-                st.info(f"**Generation Model**\n{stats['model_info']['generation_model']}")
-            with col3:
-                st.info(f"**Embedding Dimension**\n{stats['model_info']['embedding_dimension']}")
-        else:
-            st.error("Unable to load statistics")
+        except Exception as e:
+            st.error(f"Error loading stats: {str(e)}")
     
     with tab3:
         st.header("About LawLM")
@@ -277,7 +161,7 @@ def main_app():
         
         ### 🏗️ Architecture
         
-        - **Backend**: FastAPI with JWT authentication
+        - **Backend**: FastAPI
         - **Database**: PostgreSQL + pgvector
         - **Embeddings**: Sentence Transformers (all-MiniLM-L6-v2)
         - **LLM**: Llama 3.1 8B via Ollama (runs locally!)
@@ -293,7 +177,6 @@ def main_app():
         
         ✅ Open-source LLM (no API costs!)  
         ✅ Runs completely locally  
-        ✅ JWT authentication  
         ✅ Vector similarity search  
         ✅ RESTful API  
         ✅ Real-time analytics  
@@ -321,25 +204,21 @@ def main_app():
         
         # Health check
         st.subheader("🏥 System Health")
-        response = make_authenticated_request("/health")
-        if response and response.status_code == 200:
-            health = response.json()
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                status = "🟢" if health['database'] == 'healthy' else "🔴"
-                st.metric("Database", f"{status} {health['database']}")
-            with col2:
-                status = "🟢" if health['ollama'] == 'healthy' else "🔴"
-                st.metric("Ollama", f"{status} {health['ollama']}")
-            with col3:
-                st.metric("Model", health['model'])
-
-# Main app logic
-def main():
-    if st.session_state.token is None:
-        login_page()
-    else:
-        main_app()
+        try:
+            response = requests.get(f"{API_URL}/health")
+            if response.status_code == 200:
+                health = response.json()
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    status = "🟢" if health['database'] == 'healthy' else "🔴"
+                    st.metric("Database", f"{status} {health['database']}")
+                with col2:
+                    status = "🟢" if health['ollama'] == 'healthy' else "🔴"
+                    st.metric("Ollama", f"{status} {health['ollama']}")
+                with col3:
+                    st.metric("Model", health['model'])
+        except Exception as e:
+            st.error(f"Could not check health: {str(e)}")
 
 if __name__ == "__main__":
-    main()
+    main_app()

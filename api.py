@@ -1,37 +1,29 @@
 """
-LawLM - FastAPI Backend with Authentication & Open-Source LLM
-RESTful API with JWT authentication and Ollama (Llama 3.1) integration
+LawLM - FastAPI Backend (No Authentication - Testing)
+RESTful API with Ollama (Llama 3.1) integration
 """
 
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import List, Optional
 import psycopg2
 from sentence_transformers import SentenceTransformer
-import jwt
-from datetime import datetime, timedelta
-from passlib.context import CryptContext
 import ollama
 import os
 import time
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
 # Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-OLLAMA_MODEL = "llama3.1:3b"  # You can change to mistral, phi3, etc.
+OLLAMA_MODEL = "llama3.2:3b"  # You can change to mistral, phi3, etc.
 
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
     'port': int(os.getenv('DB_PORT', 5432)),
     'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'your_password'),
+    'password': os.getenv('DB_PASSWORD', 'jameerbaba7'),
     'database': os.getenv('DB_NAME', 'lawlm')
 }
 
@@ -47,15 +39,11 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production: specify exact origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Security
-security = HTTPBearer()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Load embedding model
 print("Loading embedding model...")
@@ -63,20 +51,6 @@ model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 print("✓ Embedding model loaded")
 
 # Pydantic models
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
-    full_name: str
-
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    expires_in: int
-
 class QueryRequest(BaseModel):
     query: str
     top_k: Optional[int] = 5
@@ -98,123 +72,15 @@ class QueryResponse(BaseModel):
     response_time_ms: int
     model_used: str
 
-class FeedbackRequest(BaseModel):
-    query_id: int
-    rating: int  # 1-5
-    comment: Optional[str] = None
-
 class Stats(BaseModel):
     total_queries: int
-    total_users: int
     avg_response_time_ms: float
     model_info: dict
 
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database tables on startup"""
-    init_auth_tables()
-    
-    # Create default test user
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT id FROM users WHERE email = %s", ("test@example.com",))
-        if not cursor.fetchone():
-            hashed_pw = get_password_hash("password123")
-            cursor.execute(
-                "INSERT INTO users (email, hashed_password, full_name) VALUES (%s, %s, %s)",
-                ("test@example.com", hashed_pw, "Test User")
-            )
-            conn.commit()
-            print("✓ Default test user created (email: test@example.com, password: password123)")
-        
-        cursor.close()
-        conn.close()
-    except Exception as e:
-        print(f"Error creating default user: {e}")
-    
-    print(f"✓ LawLM API started with {OLLAMA_MODEL}")
-    print("✓ Docs available at: http://localhost:8000/docs")
-
-
 # Database functions
-def get_db():
+def get_db_connection():
     """Get database connection"""
-    conn = psycopg2.connect(**DB_CONFIG)
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-def init_auth_tables():
-    """Initialize authentication tables"""
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            email VARCHAR(255) UNIQUE NOT NULL,
-            hashed_password VARCHAR(255) NOT NULL,
-            full_name VARCHAR(255),
-            is_active BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    cursor.execute("""
-        ALTER TABLE queries ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)
-    """)
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
-    print("✓ Auth tables initialized")
-
-# Authentication functions
-import hashlib
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    # Pre-hash with SHA256 to handle any length password
-    prehashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
-    return pwd_context.verify(prehashed, hashed_password)
-
-def get_password_hash(password: str) -> str:
-    # Pre-hash with SHA256 to handle any length password
-    prehashed = hashlib.sha256(password.encode('utf-8')).hexdigest()
-    return pwd_context.hash(prehashed)
-
-
-def create_access_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Verify JWT token and return user email"""
-    try:
-        token = credentials.credentials
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials"
-            )
-        return email
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired"
-        )
-    except jwt.JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials"
-        )
+    return psycopg2.connect(**DB_CONFIG)
 
 # RAG functions
 def retrieve_documents(conn, query: str, top_k: int = 5, law_type: str = None):
@@ -292,9 +158,9 @@ Answer:"""
             model=OLLAMA_MODEL,
             prompt=prompt,
             options={
-                'temperature': 0.3,  # Lower temperature for factual answers
+                'temperature': 0.3,
                 'top_p': 0.9,
-                'num_predict': 500  # Max tokens
+                'num_predict': 500
             }
         )
         
@@ -319,173 +185,86 @@ async def root():
         "model": OLLAMA_MODEL
     }
 
-@app.post("/auth/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def register(user: UserCreate, conn = Depends(get_db)):
-    """Register a new user"""
-    cursor = conn.cursor()
-    
-    # Check if user exists
-    cursor.execute("SELECT id FROM users WHERE email = %s", (user.email,))
-    if cursor.fetchone():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-    
-    # Create user
-    hashed_password = get_password_hash(user.password)
-    cursor.execute(
-        "INSERT INTO users (email, hashed_password, full_name) VALUES (%s, %s, %s) RETURNING id",
-        (user.email, hashed_password, user.full_name)
-    )
-    conn.commit()
-    cursor.close()
-    
-    # Create token
-    access_token = create_access_token(data={"sub": user.email})
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    }
-
-@app.post("/auth/login", response_model=Token)
-async def login(user: UserLogin, conn = Depends(get_db)):
-    """Login and get access token"""
-    cursor = conn.cursor()
-    
-    cursor.execute(
-        "SELECT hashed_password, is_active FROM users WHERE email = %s",
-        (user.email,)
-    )
-    result = cursor.fetchone()
-    cursor.close()
-    
-    if not result or not verify_password(user.password, result[0]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password"
-        )
-    
-    if not result[1]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is inactive"
-        )
-    
-    access_token = create_access_token(data={"sub": user.email})
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    }
-
 @app.post("/query", response_model=QueryResponse)
-async def query_law(
-    request: QueryRequest,
-    current_user: str = Depends(get_current_user),
-    conn = Depends(get_db)
-):
+async def query_law(request: QueryRequest):
     """Query the legal database with RAG"""
     start_time = time.time()
     
-    # Retrieve relevant documents
-    sources = retrieve_documents(conn, request.query, request.top_k, request.law_type)
+    conn = get_db_connection()
     
-    if not sources:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No relevant legal information found"
+    try:
+        # Retrieve relevant documents
+        sources = retrieve_documents(conn, request.query, request.top_k, request.law_type)
+        
+        if not sources:
+            raise HTTPException(
+                status_code=404,
+                detail="No relevant legal information found"
+            )
+        
+        # Generate answer
+        if request.use_llm:
+            answer = generate_answer_with_ollama(request.query, sources)
+            model_used = OLLAMA_MODEL
+        else:
+            answer = sources[0]['answer']
+            model_used = "direct_retrieval"
+        
+        response_time_ms = int((time.time() - start_time) * 1000)
+        
+        # Log query
+        cursor = conn.cursor()
+        law_ids = [s['law_id'] for s in sources]
+        cursor.execute(
+            """INSERT INTO queries 
+               (user_query, retrieved_law_ids, response_text, response_time_ms)
+               VALUES (%s, %s, %s, %s) RETURNING id""",
+            (request.query, law_ids, answer, response_time_ms)
+        )
+        conn.commit()
+        cursor.close()
+        
+        return QueryResponse(
+            query=request.query,
+            answer=answer,
+            sources=[Source(**s) for s in sources],
+            response_time_ms=response_time_ms,
+            model_used=model_used
         )
     
-    # Generate answer
-    if request.use_llm:
-        answer = generate_answer_with_ollama(request.query, sources)
-        model_used = OLLAMA_MODEL
-    else:
-        answer = sources[0]['answer']
-        model_used = "direct_retrieval"
-    
-    response_time_ms = int((time.time() - start_time) * 1000)
-    
-    # Log query
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE email = %s", (current_user,))
-    user_id = cursor.fetchone()[0]
-    
-    law_ids = [s['law_id'] for s in sources]
-    cursor.execute(
-        """INSERT INTO queries 
-           (user_query, retrieved_law_ids, response_text, response_time_ms, user_id)
-           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-        (request.query, law_ids, answer, response_time_ms, user_id)
-    )
-    conn.commit()
-    cursor.close()
-    
-    return QueryResponse(
-        query=request.query,
-        answer=answer,
-        sources=[Source(**s) for s in sources],
-        response_time_ms=response_time_ms,
-        model_used=model_used
-    )
-
-@app.post("/feedback")
-async def submit_feedback(
-    feedback: FeedbackRequest,
-    current_user: str = Depends(get_current_user),
-    conn = Depends(get_db)
-):
-    """Submit feedback for a query"""
-    cursor = conn.cursor()
-    
-    cursor.execute(
-        "UPDATE queries SET feedback_score = %s WHERE id = %s",
-        (feedback.rating, feedback.query_id)
-    )
-    conn.commit()
-    cursor.close()
-    
-    return {"message": "Feedback submitted successfully"}
+    finally:
+        conn.close()
 
 @app.get("/stats", response_model=Stats)
-async def get_stats(
-    current_user: str = Depends(get_current_user),
-    conn = Depends(get_db)
-):
+async def get_stats():
     """Get system statistics"""
+    conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT COUNT(*) FROM queries")
-    total_queries = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM users WHERE is_active = true")
-    total_users = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT AVG(response_time_ms) FROM queries")
-    avg_response_time = cursor.fetchone()[0] or 0
-    
-    cursor.close()
-    
-    return Stats(
-        total_queries=total_queries,
-        total_users=total_users,
-        avg_response_time_ms=float(avg_response_time),
-        model_info={
-            "embedding_model": "all-MiniLM-L6-v2",
-            "generation_model": OLLAMA_MODEL,
-            "embedding_dimension": 384
-        }
-    )
+    try:
+        cursor.execute("SELECT COUNT(*) FROM queries")
+        total_queries = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT AVG(response_time_ms) FROM queries")
+        avg_response_time = cursor.fetchone()[0] or 0
+        
+        return Stats(
+            total_queries=total_queries,
+            avg_response_time_ms=float(avg_response_time),
+            model_info={
+                "embedding_model": "all-MiniLM-L6-v2",
+                "generation_model": OLLAMA_MODEL,
+                "embedding_dimension": 384
+            }
+        )
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.get("/health")
 async def health_check():
     """Detailed health check"""
     try:
-        # Check database
         conn = psycopg2.connect(**DB_CONFIG)
         conn.close()
         db_status = "healthy"
@@ -506,11 +285,9 @@ async def health_check():
         "model": OLLAMA_MODEL
     }
 
-# Startup event
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database tables on startup"""
-    init_auth_tables()
+    """Initialize on startup"""
     print(f"✓ LawLM API started with {OLLAMA_MODEL}")
     print("✓ Docs available at: http://localhost:8000/docs")
 
